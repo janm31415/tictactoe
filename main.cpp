@@ -90,52 +90,63 @@ e_playertype get_winner(int board) {
 
 #define max_table_size 262144
 
-void fill_table(int& gametree_size, int& number_of_games_won_by_beginner, float* table, int board, e_playertype player, int depth) {
+void fill_table(int& gametree_size, int& number_of_games_won_by_beginner, int& number_of_games_won_by_other, float* beginner_table, float* other_table, int board, e_playertype player, int depth) {
   e_playertype winner = get_winner(board);
   if (winner != e_playertype::empty) {
     gametree_size = 1;
     number_of_games_won_by_beginner = winner == e_playertype::beginner;
+    number_of_games_won_by_other = winner == e_playertype::other;
     return;
   }
   if (depth == 0) {
     gametree_size = 1;
     number_of_games_won_by_beginner = 0;
+    number_of_games_won_by_other = 0;
     return;
   }
   gametree_size = 0;
   number_of_games_won_by_beginner = 0;
+  number_of_games_won_by_other = 0;
   auto swapped_player = other_player(player);
   for (int i = 0; i < 9; ++i) {
     if (get_player(i, board) == e_playertype::empty) {
       int new_board = put_player(i, player, board);
-      int rec_gametree_size, rec_number_of_games_won_by_beginner;
-      fill_table(rec_gametree_size, rec_number_of_games_won_by_beginner, table, new_board, swapped_player, depth-1);
-      table[new_board] = (double)rec_number_of_games_won_by_beginner/(double)rec_gametree_size;
+      int rec_gametree_size, rec_number_of_games_won_by_beginner, rec_number_of_games_won_by_other;
+      fill_table(rec_gametree_size, rec_number_of_games_won_by_beginner, rec_number_of_games_won_by_other, beginner_table, other_table, new_board, swapped_player, depth-1);
+      beginner_table[new_board] = (double)rec_number_of_games_won_by_beginner/(double)rec_gametree_size;
+      other_table[new_board] = (double)rec_number_of_games_won_by_other/(double)rec_gametree_size;
       gametree_size += rec_gametree_size;
       number_of_games_won_by_beginner += rec_number_of_games_won_by_beginner;
+      number_of_games_won_by_other += rec_number_of_games_won_by_other;
     }
   }
 }
 
 // this table returns the percentage of wins for the beginner for a given board situation
-float* build_table() {
-  float* table = new float[max_table_size];
+void build_tables(float*& beginner_table, float*& other_table) {
+  beginner_table = new float[max_table_size];
+  other_table = new float[max_table_size];
   for (int i = 0; i < max_table_size; ++i)
-  table[i] = -1.f; // init everything to invalid
+    beginner_table[i] = -1.f; // init everything to invalid
+  for (int i = 0; i < max_table_size; ++i)
+    other_table[i] = -1.f; // init everything to invalid
   
   int total_gametree_size = 0;
   int total_number_of_games_won_by_beginner = 0;
+  int total_number_of_games_won_by_other = 0;
   
   for (int i = 0; i < 9; ++i) {
     int board = put_player(i, e_playertype::beginner, 0);
-    int gametree_size, number_of_games_won_by_beginner;
-    fill_table(gametree_size, number_of_games_won_by_beginner, table, board, e_playertype::other, 8);
-    table[board] = (double)number_of_games_won_by_beginner/(double)gametree_size;
+    int gametree_size, number_of_games_won_by_beginner, number_of_games_won_by_other;
+    fill_table(gametree_size, number_of_games_won_by_beginner, number_of_games_won_by_other, beginner_table, other_table, board, e_playertype::other, 8);
+    beginner_table[board] = (double)number_of_games_won_by_beginner/(double)gametree_size;
+    other_table[board] = (double)number_of_games_won_by_other/(double)gametree_size;
     total_gametree_size += gametree_size;
     total_number_of_games_won_by_beginner += number_of_games_won_by_beginner;
+    total_number_of_games_won_by_other += number_of_games_won_by_other;
   }
-  table[0] = (double)total_number_of_games_won_by_beginner/(double)total_gametree_size;
-  return table;
+  beginner_table[0] = (double)total_number_of_games_won_by_beginner/(double)total_gametree_size;
+  other_table[0] = (double)total_number_of_games_won_by_other/(double)total_gametree_size;
 }
 
 void print_board(int board) {
@@ -152,8 +163,9 @@ void print_board(int board) {
   }
 }
 
-void print_table_result(int board, float* table) {
-  std::cout << "Percentage of wins for beginner: " << table[board]*100.f << "%" << std::endl;
+void print_table_result(int board, float* beginner_table, float* other_table) {
+  std::cout << "Percentage of wins for beginner: " << beginner_table[board]*100.f << "%" << std::endl;
+  std::cout << "Percentage of wins for other: " << other_table[board]*100.f << "%" << std::endl;
 }
 
 void print_result(int board) {
@@ -176,15 +188,48 @@ void print_result(int board) {
     std::cout << "Draw!" << std::endl;
 }
 
-void think(int& index, double& chance_of_winning, int board, e_playertype computer_side, float* table) {
+void think_1level(int& index, double& chance_of_winning, int board, e_playertype computer_side, float* beginner_table, float* other_table) {
   index = -1;
   chance_of_winning = -1.0;
   for (int i = 0; i < 9; ++i) {
     if (get_player(i, board) == e_playertype::empty) {
       int new_board = put_player(i, computer_side, board);
-      double score = table[new_board];
-      if (computer_side == e_playertype::other)
-        score = 1.0 - score; // invert
+      double score = 0.f;
+      if (computer_side == e_playertype::beginner)
+        score = beginner_table[new_board];
+      else if (computer_side == e_playertype::other)
+        score = other_table[new_board];
+      if (score > chance_of_winning) {
+        chance_of_winning = score;
+        index = i;
+      }
+    }
+  }
+}
+
+void think(int& index, double& chance_of_winning, int board, e_playertype computer_side, float* beginner_table, float* other_table) {
+  index = -1;
+  chance_of_winning = -1.0;
+  for (int i = 0; i < 9; ++i) {
+    if (get_player(i, board) == e_playertype::empty) {
+      int new_board = put_player(i, computer_side, board);
+      double score = 0.f;
+      if (computer_side == e_playertype::beginner) {
+        score = beginner_table[new_board];
+        if (!score)
+          score = 0.00001f;
+        int tmp; double multiplier;
+        think_1level(tmp, multiplier, new_board, e_playertype::other, beginner_table, other_table);
+        score *= (1.0-multiplier);
+        }
+      else if (computer_side == e_playertype::other) {
+        score = other_table[new_board];
+        if (!score)
+          score = 0.001f;
+        int tmp; double multiplier;
+        think_1level(tmp, multiplier, new_board, e_playertype::beginner, beginner_table, other_table);
+        score *= (1.0-multiplier);
+        }
       if (score > chance_of_winning) {
         chance_of_winning = score;
         index = i;
@@ -195,7 +240,9 @@ void think(int& index, double& chance_of_winning, int board, e_playertype comput
 
 int main() {
   tic();
-  float* table = build_table();
+  float* beginner_table;
+  float* other_table;
+  build_tables(beginner_table, other_table);
   int time_spent = toc();
   
   std::cout << "TicTacToe" << std::endl;
@@ -216,7 +263,7 @@ int main() {
     if (side_to_move == computer_side) {
       int index;
       double chance_of_winning;
-      think(index, chance_of_winning, board, computer_side, table);
+      think(index, chance_of_winning, board, computer_side, beginner_table, other_table);
       if (index < 0)
         {
         computer_side = e_playertype::empty;
@@ -224,7 +271,7 @@ int main() {
         }
       board = put_player(index, side_to_move, board);
       print_board(board);
-      print_table_result(board, table);
+      print_table_result(board, beginner_table, other_table);
       print_result(board);
       side_to_move = other_player(side_to_move);
       continue;
@@ -233,7 +280,8 @@ int main() {
     if (!fgets(command_line, 256, stdin))
     {
       std::cout << "Error: cannot read from stdin\n";
-      delete [] table;
+      delete [] beginner_table;
+      delete [] other_table;
       return -1;
     }
     if (command_line[0] == '\n')
@@ -247,7 +295,7 @@ int main() {
     if (std::string(command) == std::string("d"))
     {
       print_board(board);
-      print_table_result(board, table);
+      print_table_result(board, beginner_table, other_table);
       print_result(board);
       fflush(stdout);
       continue;
@@ -270,7 +318,7 @@ int main() {
     {
     int index;
     double chance_of_winning;
-    think(index, chance_of_winning, board, side_to_move, table);
+    think(index, chance_of_winning, board, side_to_move, beginner_table, other_table);
     std::cout << "Hint: " << index/3 << " " << index%3 << std::endl;
     std::cout << "Chance of winning: " << chance_of_winning*100.f << "%" << std::endl;
     continue;
@@ -285,12 +333,13 @@ int main() {
     else {
       board = put_player(row, col, side_to_move, board);
       print_board(board);
-      print_table_result(board, table);
+      print_table_result(board, beginner_table, other_table);
       print_result(board);
       side_to_move = other_player(side_to_move);
     }
   }
   
-  delete [] table;
+  delete [] beginner_table;
+  delete [] other_table;
   return 0;
 }
