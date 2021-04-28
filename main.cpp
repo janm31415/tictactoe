@@ -100,6 +100,7 @@ void fill_table(int& gametree_size, int& number_of_games_won_by_beginner, float*
   if (depth == 0) {
     gametree_size = 1;
     number_of_games_won_by_beginner = 0;
+    return;
   }
   gametree_size = 0;
   number_of_games_won_by_beginner = 0;
@@ -197,10 +198,16 @@ int main() {
   float* table = build_table();
   int time_spent = toc();
   
+  std::cout << "TicTacToe" << std::endl;
+  std::cout << "=========" << std::endl;
   std::cout << "Building the table took " << time_spent << "ms" << std::endl;
   
   std::cout << "Type 2 seperated integers 'row' and 'col' to put a marker on the board." << std::endl;
-  
+  std::cout << "Type new to begin a new game." << std::endl;
+  std::cout << "Type d to print the board." << std::endl;
+  std::cout << "Type go to let the computer play." << std::endl;
+  std::cout << "Type hint to get the best current move." << std::endl;
+  std::cout << "Type exit or quit to quit the game." << std::endl;
   e_playertype computer_side = e_playertype::empty;
   e_playertype side_to_move = e_playertype::beginner;
   int board = 0;
